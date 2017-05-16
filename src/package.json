@@ -1,0 +1,16 @@
+{
+  "name": "hoster",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Pieter Scheffers",
+  "license": "MIT",
+  "dependencies": {
+    "le-challenge-fs": "^2.0.8",
+    "le-store-certbot": "^2.0.5",
+    "letsencrypt": "^2.1.8"
+  }
+}
