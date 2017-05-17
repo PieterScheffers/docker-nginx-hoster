@@ -1,9 +1,14 @@
-FROM node
+FROM node:alpine
 
 # Install docker 17.05.0
-COPY ./bin/docker /usr/bin
+# Install certbot-auto 17-05-2017
+# TODO: download latest from github
+COPY ./bin/* /usr/bin/
 
-RUN mkdir -p /usr/app
+RUN mkdir -p /usr/app \
+	&& mkdir -p /etc/nginx/conf.d \
+	&& mkdir -p /etc/nginx/certs \
+	&& chmod +x /usr/bin/docker
 
 COPY ./src /usr/app
 

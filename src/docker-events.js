@@ -1,12 +1,14 @@
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 const docker = require("./docker-bin");
+const { toSmallHash } = require('./docker-containers');
 
 class DockerEventsEmitter extends EventEmitter {
   constructor(...args) {
     super(...args);
     this.ended = false;
     this.deProc = null;
+    this.data = "";
 
     this.start();
   }
@@ -27,14 +29,46 @@ class DockerEventsEmitter extends EventEmitter {
     this.deProc = spawn(docker, [ 'events' ]);
 
     this.deProc.stdout.on('data', data => {
-      const [ timestamp, part, subpart, hash ] = data.toString().split(' ');
-      this.emit(`${part}_${subpart}`, hash);
-      this.emit(part, subpart, hash);
+      this.data += data.toString();
+
+      const dataParts = this.data.split("\n");
+      this.data = dataParts.pop();
+
+      dataParts.forEach(dp => {
+        const [ parts, infoStr ] = dp.split('(');
+        const [ timestamp, part, action, longHash ] = parts.split(' ');
+
+        let info = {
+          date: new Date(timestamp),
+          part,
+          action,
+          hash: longHash ? toSmallHash(longHash) : ''
+        };
+
+        if( infoStr ) {
+          info = infoStr.replace(')', '')
+            .split(', ')
+            .reduce((obj, i) => {
+              const [ key, value ] = i.split('=');
+              obj[key] = value;
+              return obj;
+            }, info)
+        }
+
+        this.emit(`${part}_${action}`, info);
+        this.emit(part, info);
+        this.emit('all', info);
+      });
+    });
+
+    this.deProc.stderr.on('data', (data) => {
+      this.emit('error', data);
     });
 
     this.deProc.once('close', (code) => {
       if( this.ended === false ) {
         this.deProc = null;
+        this.data = "";
       }
     });
   }
@@ -46,6 +80,7 @@ class DockerEventsEmitter extends EventEmitter {
     this.deProc.once('close', (code) => {
       this.deProc = null;
       this.ended = false;
+      this.data = "";
     });
   }
 }
@@ -59,29 +94,4 @@ function listen() {
   return de;
 }
 
-
-// function listen() {
-//   if( de ) return de;
-
-//   de = new DockerEventsEmitter();
-
-//   de = spawn(docker, [ 'events' ]);
-
-//   de.stdout.on('data', data => {
-//     console.log(`stdout: ${data}`);
-//   });
-
-//   de.stderr.on('data', (data) => {
-//     console.log(`stderr: ${data}`);
-//   });
-
-//   de.on('close', (code) => {
-//     console.log(`child process exited with code ${code}`);
-//   });
-
-//   return de;
-// }
-
 module.exports = listen;
-
-// de.stdin.end();

@@ -1,8 +1,19 @@
 version: '3'
 
 services:
+  nginx:
+    image: nginx:latest
+    volumes:
+
+
   hoster:
     build: .
     container_name: hoster
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  certbot-server:
+    image: pieterscheffers/certbot-server:latest
+    volumes:
+      - ./data/certbot/var_lib_letsencrypt:/var/lib/letsencrypt
+      - ./data/certbot/etc_letsencrypt:/etc/letsencrypt
