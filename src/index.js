@@ -1,9 +1,8 @@
 const { inspect, get, argsTranspile, toSmallHash } = require('./docker-containers');
 const { replace } = require('./template');
 const { writeFile } = require('./fs');
-const dockerEvents = require('./docker-events');
-const { getDomains } = require('./docker-hosting');
-
+const { createListener, refreshConfigs } = require('./docker-hosting');
+const { getSelfSigned, getDhParam } = require('./openssl');
 /**
  * environment variables
  * NG_PR_DOMAIN
@@ -12,19 +11,28 @@ const { getDomains } = require('./docker-hosting');
  * NG_PR_TEMPLATE
  *
  * configuration variables
+ * NG_PR_DOMAINS = spaces separated domain names
  * NG_PR_1_PORT
  * NG_PR_1_HOST
  * NG_PR_1_DOMAIN
  * NG_PR_EMAIL
+ * NG_PR_UPSTREAM
+ * NG_PR_DHPARAM
+ * NG_PR_TRUSTED_CERTIFICATE
+ * NG_PR_SSL_CERTIFICATE
+ * NG_PR_SSL_CERTIFICATE_KEY
  */
 
 async function main() {
   try {
-    const de = dockerEvents();
 
-    de.on('all', info => console.log('info', info))
+    const listener = createListener();
+    listener.start();
 
-    console.log(await getDomains());
+    await refreshConfigs();
+
+    console.log('self-signed', await getSelfSigned());
+    console.log('dhparam', await getDhParam());
 
     // const containers = await get();
     // console.log("containers", containers);
@@ -41,6 +49,7 @@ async function main() {
 
   } catch(e) {
     console.error('Exception: ', e);
+    listener.stop();
   }
 }
 

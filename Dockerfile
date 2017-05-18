@@ -10,11 +10,16 @@ RUN mkdir -p /usr/app \
 	&& mkdir -p /etc/nginx/certs \
 	&& chmod +x /usr/bin/docker
 
-COPY ./src /usr/app
+RUN apk --no-cache add openssl
 
 WORKDIR /usr/app
+
+ENTRYPOINT node /usr/app/index.js
+
+COPY ./src/package.json /usr/app
+
 RUN [ "npm", "install" ]
 
 ENV PATH /usr/app/node_modules/.bin:$PATH
 
-CMD node index.js
+COPY ./src /usr/app

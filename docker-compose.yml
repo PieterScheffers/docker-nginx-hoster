@@ -2,18 +2,28 @@ version: '3'
 
 services:
   nginx:
+    ports:
+      - "80:80"
+      - "443:443"
     image: nginx:latest
     volumes:
-
+      - certs-volume:/etc/nginx/certs:ro
+      - conf-volume:/etc/nginx/conf.d:ro
 
   hoster:
     build: .
     container_name: hoster
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs-volume:/etc/nginx/certs
+      - conf-volume:/etc/nginx/conf.d
 
-  certbot-server:
-    image: pieterscheffers/certbot-server:latest
-    volumes:
-      - ./data/certbot/var_lib_letsencrypt:/var/lib/letsencrypt
-      - ./data/certbot/etc_letsencrypt:/etc/letsencrypt
+  # certbot-server:
+  #   image: pieterscheffers/certbot-server:latest
+  #   volumes:
+  #     - ./data/certbot/var_lib_letsencrypt:/var/lib/letsencrypt
+  #     - ./data/certbot/etc_letsencrypt:/etc/letsencrypt
+
+volumes:
+  certs-volume:
+  conf-volume:

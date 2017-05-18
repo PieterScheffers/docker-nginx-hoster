@@ -3,6 +3,8 @@ const EventEmitter = require('events');
 const docker = require("./docker-bin");
 const { toSmallHash } = require('./docker-containers');
 
+// TODO: make listen stoppable -> check if there is anyone listening -> stop DockerEventsEmitter if no one
+
 class DockerEventsEmitter extends EventEmitter {
   constructor(...args) {
     super(...args);
@@ -52,7 +54,7 @@ class DockerEventsEmitter extends EventEmitter {
               const [ key, value ] = i.split('=');
               obj[key] = value;
               return obj;
-            }, info)
+            }, info);
         }
 
         this.emit(`${part}_${action}`, info);

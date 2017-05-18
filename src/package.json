@@ -12,6 +12,8 @@
     "le-challenge-fs": "^2.0.8",
     "le-store-certbot": "^2.0.5",
     "letsencrypt": "^2.1.8",
-    "node-schedule": "^1.2.1"
+    "node-schedule": "^1.2.1",
+    "pem": "^1.9.7",
+    "promisify-node": "^0.4.0"
   }
 }
