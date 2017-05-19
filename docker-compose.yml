@@ -18,6 +18,13 @@ services:
       - certs-volume:/etc/nginx/certs
       - conf-volume:/etc/nginx/conf.d
 
+  example1:
+    image: nginx
+    environment:
+      NG_PR_DOMAIN: www.example.com,example.com
+      NG_PR_PORT: 80,
+      NG_PR_EMAIL: info@pieterscheffers.nl
+
   # certbot-server:
   #   image: pieterscheffers/certbot-server:latest
   #   volumes:

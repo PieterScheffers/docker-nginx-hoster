@@ -2,9 +2,10 @@ const promisify = require("promisify-node");
 const pem = promisify('pem');
 const config = require('./config');
 const fs = promisify('fs');
-const { delay } = require('./utils');
+const { fileExists } = require('./fs');
 
 // https://www.npmjs.com/package/pem
+// https://jamielinux.com/docs/openssl-certificate-authority/index.html
 
 const promises = {
   selfSigned: null,
@@ -19,34 +20,38 @@ async function getSelfSigned() {
 
 async function getDhParam() {
   if( !promises.dhparam ) promises.dhparam = createDhparam();
-  if( !promises.dhparamSmall ) promises.dhparamSmall = createSmallDhparam();
+  return await promises.dhparam;
+}
 
-  // add a 100 ms delay to the small dhparam, if it is still faster, return it
-  // when the big dhparam is generated, it will be returned instead
-  const dhparam = await Promise.race([
-    promises.dhparam,
-    promises.dhparamSmall.then(result => {
-      console.log("dhparamsmall delay func")
-      return delay(100).then(() => result);
-    })
-  ]);
+async function selfSignedExists() {
+  const keyExists = fileExists(config.ssl.key);
+  const certExists = fileExists(config.ssl.cert);
 
-  console.log("dhparam func", dhparam);
+  return await keyExists && await certExists;
+}
 
-  return dhparam;
+async function dhparamExists() {
+  return fileExists(config.ssl.dhparam);
 }
 
 /**
  * Create a new key/cert pair and save as file
  */
 async function createSelfSigned() {
-  const { serviceKey, certificate } = await pem.createCertificate({ days: 10000, selfSigned: true });
 
-  const task1 = fs.writeFile(config.ssl.key, serviceKey);
-  const task2 = fs.writeFile(config.ssl.cert, certificate);
+  if( !await selfSignedExists() ) {
 
-  await task1;
-  await task2;
+    const keys = await pem.createCertificate({ days: 10000, selfSigned: true });
+    const { serviceKey, certificate } = keys;
+
+    // console.log("keys", keys); // csr, clientKey, certificate, serviceKey
+
+    const task1 = fs.writeFile(config.ssl.key, serviceKey);
+    const task2 = fs.writeFile(config.ssl.cert, certificate);
+
+    await task1;
+    await task2;
+  }
 
   return { key: config.ssl.key, cert: config.ssl.cert };
 }
@@ -55,26 +60,22 @@ async function createSelfSigned() {
  * Create a dhparam and save to file
  */
 async function createDhparam() {
-  console.log("begin creating dhparam...");
-  const { dhparam } = await pem.createDhparam(2048);
-  await fs.writeFile(config.ssl.dhparam, dhparam);
 
-  console.log("done createing dhparam");
+  if( !await dhparamExists() ) {
+    console.log("Begin creating dhparam...");
+
+    const { dhparam } = await pem.createDhparam(2048);
+    await fs.writeFile(config.ssl.dhparam, dhparam);
+
+    console.log("Done creating dhparam!");
+  }
 
   return config.ssl.dhparam;
 }
 
-async function createSmallDhparam() {
-  console.log("begin creating small dhparam...");
-  const { dhparam } = await pem.createDhparam(512);
-  await fs.writeFile(config.ssl.dhparamSmall, dhparam);
-
-  console.log("done createing small dhparam");
-
-  return config.ssl.dhparamSmall;
-}
-
 module.exports = exports = {
   getSelfSigned,
-  getDhParam
+  getDhParam,
+  selfSignedExists,
+  dhparamExists,
 };

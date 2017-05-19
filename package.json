@@ -2,9 +2,10 @@
   "name": "hoster",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "test": "mocha src/**/*.spec.js"
   },
   "author": "Pieter Scheffers",
   "license": "MIT",
@@ -15,5 +16,9 @@
     "node-schedule": "^1.2.1",
     "pem": "^1.9.7",
     "promisify-node": "^0.4.0"
+  },
+  "devDependencies": {
+    "chai": "*",
+    "mocha": "*"
   }
 }

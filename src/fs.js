@@ -1,10 +1,30 @@
-const fs = require('fs');
+const promisify = require("promisify-node");
+const fs = promisify('fs');
 
-function writeFile(...args) {
-  return new Promise((resolve, reject) => {
-    fs.writeFile(...args, (err) => {
-      return err ? reject(err) : resolve(args[0]);
-    });
-  });
+exports.writeFile = fs.writeFile;
+
+async function fileExists(file, minSize = 10) {
+  try {
+
+    const [ stats ] = await Promise.all([
+      fs.stat(file),
+      fs.access(file, fs.constants.R_OK)
+    ]);
+
+    if( stats.size < minSize ) {
+      return false;
+    }
+
+    return true;
+
+  } catch(error) {
+
+    if( error.code === 'ENOENT' ) {
+      return false;
+    }
+
+    throw error;
+  }
 }
-exports.writeFile = writeFile;
+
+exports.fileExists = fileExists;

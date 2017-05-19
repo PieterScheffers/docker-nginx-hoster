@@ -24,9 +24,12 @@ const { getSelfSigned, getDhParam } = require('./openssl');
  */
 
 async function main() {
+
+  let listener;
+
   try {
 
-    const listener = createListener();
+    listener = createListener();
     listener.start();
 
     await refreshConfigs();

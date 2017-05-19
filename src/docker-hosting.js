@@ -6,9 +6,13 @@ const path = require('path');
 const { inspect, getRunning, toSmallHash, getHostName } = require('./docker-containers');
 const { logObject, throttle, randomString } = require('./utils');
 const dockerEvents = require('./docker-events');
-const { replace } = require('./template');
-const defaultTemplate = fs.readFileSync(path.join(__dirname, 'default-template.conf'));
-const acmeChallengeTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'certbot-acme-challenge.conf'));
+const { replace, conditional } = require('./template');
+const config = require('./config');
+const { dhparamExists, selfSignedExists } = require('./openssl');
+
+const defaultTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'default-template.conf'), { encoding: 'utf-8' });
+const acmeChallengeTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'certbot-acme-challenge.conf'), { encoding: 'utf-8' });
+const sslTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'ssl.conf'), { encoding: 'utf-8' });
 
 async function getDomains(inspections) {
 
@@ -58,12 +62,12 @@ async function getDomains(inspections) {
     }
 
     // create domain key
-    obj[domainsStr] = [{
+    obj[domainsStr] = {
       domains,
       email,
       template,
       hosts: [ { host, port } ]
-    }];
+    };
 
     return obj;
   }, {});
@@ -76,6 +80,9 @@ exports.getDomains = getDomains;
 
 async function writeConfigs(domainsInfo) {
 
+  const hasDhparam = await dhparamExists();
+  const hasSelfSigned = await selfSignedExists();
+
   Object.keys(domainsInfo).forEach(key => {
     let { hosts, domains, template, email } = domainsInfo[key];
 
@@ -83,20 +90,46 @@ async function writeConfigs(domainsInfo) {
       template = defaultTemplate;
     }
 
-    const NG_PR_PROXY_PASS = randomString(20);
+    // insert snippets
+    // TODO:
+    //   load snippets dir and create replace keys dynamically
+    //   the snippets dir can then be mounted over with docker
+    template = replace(template, {
+      NG_PR_ACME_CHALLENGE: acmeChallengeTemplate,
+      NG_PR_SSL: sslTemplate,
+    });
+
+    // apply conditionals
+    // with it pieces of configuration can be inserted on a condition
+    const conditionals = {
+      SSL: hasSelfSigned || false,
+      Dhparam: hasDhparam,
+      TrustedCertificate: false,
+      Letsencrypt: false,
+      SelfSigned: hasSelfSigned,
+    };
+
+    Object.keys(conditionals).forEach(cond => {
+      const bool = !!conditionals[cond];
+      template = conditional(template, `if_has${cond}`, bool);
+      template = conditional(template, `if_hasNot${cond}`, !bool);
+    });
+
+    /*
+     * NG_PR_DOMAINS = spaces separated domain names
+     * NG_PR_1_PORT
+     * NG_PR_1_HOST
+     * NG_PR_EMAIL
+     * NG_PR_UPSTREAM
+     * NG_PR_DHPARAM
+     * NG_PR_TRUSTED_CERTIFICATE
+     * NG_PR_SSL_CERTIFICATE
+     * NG_PR_SSL_CERTIFICATE_KEY
+     */
+
+    const NG_PR_PROXY_PASS = domains.join('_').replace(/\./g, '');
     const NG_PR_UPSTREAM = hosts.reduce((str, { host, port }) => str + `    server ${host}:${port}\n`, `upstream ${NG_PR_PROXY_PASS} {\n`) +  "}\n";
 
-  /*
-   * NG_PR_DOMAINS = spaces separated domain names
-   * NG_PR_1_PORT
-   * NG_PR_1_HOST
-   * NG_PR_EMAIL
-   * NG_PR_UPSTREAM
-   * NG_PR_DHPARAM
-   * NG_PR_TRUSTED_CERTIFICATE
-   * NG_PR_SSL_CERTIFICATE
-   * NG_PR_SSL_CERTIFICATE_KEY
-   */
     const replacements = Object.assign(
       hosts.reduce((obj, { host, port }, i) => {
         obj[`NG_PR_${i}_PORT`] = port;
@@ -107,6 +140,7 @@ async function writeConfigs(domainsInfo) {
         NG_PR_DOMAINS: domains.join(' '),
         NG_PR_UPSTREAM,
         NG_PR_PROXY_PASS,
+        NG_PR_CERTBOT_WEBROOT: config.certbot.webroot,
         NG_PR_EMAIL: email,
         NG_PR_DHPARAM: '',
         NG_PR_TRUSTED_CERTIFICATE: '',
@@ -115,9 +149,9 @@ async function writeConfigs(domainsInfo) {
       }
     );
 
-    const config = replace(template, replacements);
+    const conf = replace(template, replacements);
 
-    logObject(config, 'config');
+    console.log(conf);
   });
 
   // TODO: write configs!
@@ -146,14 +180,17 @@ async function refreshConfigs() {
   const domains = await getDomains(inspections);
 
   await writeConfigs(domains);
+
+  // reload nginx
 }
-exports.refreshConfigs = refreshConfigs;
 
 // create a throttled hander,
 // to refresh configs every 30 seconds max
 const handler = throttle(refreshConfigs, 30000);
 
-function createListener() {
+exports.refreshConfigs = handler;
+
+function createListener(event = 'all') {
   let de;
   let handlerWrapper;
 
@@ -167,11 +204,11 @@ function createListener() {
       };
 
       // on each event run throttled handler
-      de.on('all', handlerWrapper);
+      de.on(event, handlerWrapper);
     },
 
     stop: function stop() {
-      de.removeListener('all', handlerWrapper);
+      de.removeListener(event, handlerWrapper);
       handlerWrapper = null;
       de = null;
     },
