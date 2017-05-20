@@ -1,5 +1,14 @@
 const { exec } = require('child_process');
 const docker = require("./docker-bin");
+const dockerRemoteApi = require('docker-remote-api')
+
+const request = dockerRemoteApi({
+  host: process.env.docker ? process.env.docker : '/var/run/docker.sock'
+});
+
+// https://docs.docker.com/engine/api/v1.29/#tag/Container
+// http://stackoverflow.com/questions/30775628/docker-how-to-send-a-signal-from-one-running-container-to-another-one
+// https://github.com/mafintosh/docker-remote-api
 
 function get() {
   return new Promise((resolve, reject) => {
@@ -43,6 +52,16 @@ function inspect(containers) {
   });
 }
 
+function sendSignal(container, signal = 'HUP') {
+  return new Promise((resolve, reject) => {
+    request.post(`/containers/${container}/kill?signal=${signal}`, { json: true }, (err, json) => {
+      if(err) return reject(err);
+      resolve(json);
+    })
+
+  })
+}
+
 function argsTranspile(args) {
   return args.reduce((obj, arg) => {
     const [ key, value ] = arg.split('=');
@@ -67,4 +86,5 @@ module.exports = exports = {
   argsTranspile,
   toSmallHash,
   getHostName,
+  sendSignal,
 };

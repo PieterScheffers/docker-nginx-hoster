@@ -3,16 +3,30 @@
 
 const fs = require('fs');
 const path = require('path');
-const { inspect, getRunning, toSmallHash, getHostName } = require('./docker-containers');
-const { logObject, throttle, randomString } = require('./utils');
+const { inspect, getRunning, getHostName, sendSignal } = require('./docker-containers');
+const { logObject, throttle, delay } = require('./utils');
 const dockerEvents = require('./docker-events');
 const { replace, conditional } = require('./template');
 const config = require('./config');
-const { dhparamExists, selfSignedExists } = require('./openssl');
+const { dhparamExists, selfSignedExists, md5Hash } = require('./openssl');
+const { renewCertificate } = require('./certbot');
 
 const defaultTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'default-template.conf'), { encoding: 'utf-8' });
 const acmeChallengeTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'certbot-acme-challenge.conf'), { encoding: 'utf-8' });
 const sslTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'ssl.conf'), { encoding: 'utf-8' });
+
+const existingDomains = {
+  // 'example.org,another.example.org': {
+  //   confHash: '1bdf72e04d6b50c82a48c7e4dd38cc69',
+  //   domains: [ 'example.org', 'another.example.org' ],
+  //   email: 'someone@example.org',
+  //   template: '',
+  //   hosts: [
+  //     { host: 'my-proxied-app_1', port: 3333 },
+  //     { host: 'my-proxied-app_2', port: 3333 },
+  //   ]
+  // }
+};
 
 async function getDomains(inspections) {
 
@@ -78,26 +92,34 @@ async function getDomains(inspections) {
 }
 exports.getDomains = getDomains;
 
+function writeConditionals(template, conditionals) {
+  Object.keys(conditionals).forEach(cond => {
+    const bool = !!conditionals[cond];
+    template = conditional(template, `if_has${cond}`, bool);
+    template = conditional(template, `if_hasNot${cond}`, !bool);
+  });
+
+  return template;
+}
+
 async function writeConfigs(domainsInfo) {
 
   const hasDhparam = await dhparamExists();
   const hasSelfSigned = await selfSignedExists();
 
-  Object.keys(domainsInfo).forEach(key => {
+  Object.keys(domainsInfo).forEach(async (key) => {
     let { hosts, domains, template, email } = domainsInfo[key];
+
+    const certbot = await Promise.race([
+      renewCertificate(domains, email),
+      delay(100),
+    ]);
+
+    console.log("certbot", certbot)
 
     if( !template ) {
       template = defaultTemplate;
     }
-
-    // insert snippets
-    // TODO:
-    //   load snippets dir and create replace keys dynamically
-    //   the snippets dir can then be mounted over with docker
-    template = replace(template, {
-      NG_PR_ACME_CHALLENGE: acmeChallengeTemplate,
-      NG_PR_SSL: sslTemplate,
-    });
 
     // apply conditionals
     // with it pieces of configuration can be inserted on a condition
@@ -109,11 +131,17 @@ async function writeConfigs(domainsInfo) {
       SelfSigned: hasSelfSigned,
     };
 
-    Object.keys(conditionals).forEach(cond => {
-      const bool = !!conditionals[cond];
-      template = conditional(template, `if_has${cond}`, bool);
-      template = conditional(template, `if_hasNot${cond}`, !bool);
+    template = writeConditionals(template, conditionals);
+
+    // insert snippets
+    // TODO:
+    //   load snippets dir and create replace keys dynamically
+    //   the snippets dir can then be mounted over with docker
+    template = replace(template, {
+      NG_PR_ACME_CHALLENGE: writeConditionals(acmeChallengeTemplate, conditionals),
+      NG_PR_SSL: writeConditionals(sslTemplate, conditionals),
     });
+
 
     /*
      * NG_PR_DOMAINS = spaces separated domain names
@@ -128,7 +156,7 @@ async function writeConfigs(domainsInfo) {
      */
 
     const NG_PR_PROXY_PASS = domains.join('_').replace(/\./g, '');
-    const NG_PR_UPSTREAM = hosts.reduce((str, { host, port }) => str + `    server ${host}:${port}\n`, `upstream ${NG_PR_PROXY_PASS} {\n`) +  "}\n";
+    const NG_PR_UPSTREAM = hosts.reduce((str, { host, port }) => str + `    server ${host}:${port};\n`, `upstream ${NG_PR_PROXY_PASS} {\n`) +  "}\n";
 
     const replacements = Object.assign(
       hosts.reduce((obj, { host, port }, i) => {
@@ -142,16 +170,33 @@ async function writeConfigs(domainsInfo) {
         NG_PR_PROXY_PASS,
         NG_PR_CERTBOT_WEBROOT: config.certbot.webroot,
         NG_PR_EMAIL: email,
-        NG_PR_DHPARAM: '',
+        NG_PR_DHPARAM: hasDhparam ? config.ssl.dhparam : '',
         NG_PR_TRUSTED_CERTIFICATE: '',
-        NG_PR_SSL_CERTIFICATE: '',
-        NG_PR_SSL_CERTIFICATE_KEY: '',
+        NG_PR_SSL_CERTIFICATE: hasSelfSigned ? config.ssl.cert : '',
+        NG_PR_SSL_CERTIFICATE_KEY: hasSelfSigned ? config.ssl.key : '',
       }
     );
 
     const conf = replace(template, replacements);
+    const hash = md5Hash(conf);
+    const cDomains = domains.join(',');
+    const ed = existingDomains;
 
-    console.log(conf);
+    if( !ed[cDomains] || ed[cDomains].confHash !== hash ) {
+      const file = path.join(config.nginx['conf.d'], `${domains.join('_')}.conf`);
+      await fs.writeFile(file, conf);
+    }
+    
+    ed[cDomains] = Object.assign(
+      ed[cDomains] || {}, 
+      {
+        confHash: hash,
+      }
+    );
+
+    // if any conf has changed
+    //   send HUP signal to nginx
+
   });
 
   // TODO: write configs!

@@ -15,7 +15,8 @@
     "letsencrypt": "^2.1.8",
     "node-schedule": "^1.2.1",
     "pem": "^1.9.7",
-    "promisify-node": "^0.4.0"
+    "promisify-node": "^0.4.0",
+    "docker-remote-api": "^4.4.1"
   },
   "devDependencies": {
     "chai": "*",

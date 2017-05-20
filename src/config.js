@@ -1,6 +1,6 @@
 module.exports = {
   certbot: {
-    webroot: '/etc/nginx/letsencrypt/webroot',
+    webroot: '/etc/nginx/le-webroot',
     certificates: '/etc/nginx/certs',
   },
   ssl: {
@@ -9,4 +9,7 @@ module.exports = {
     cert: '/etc/nginx/certs/self-signed-cert.pem',
     key: '/etc/nginx/certs/self-signed-key.pem',
   },
+  nginx: {
+    "conf.d": "/etc/nginx/conf.d"
+  }
 };

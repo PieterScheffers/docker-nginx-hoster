@@ -25,6 +25,7 @@ function replace(str, replacements, braces = [ '{', '}' ]) {
 /**
  * Remove all pieces between conditionals if false
  * Remove all conditionals if true
+ * TODO: allow nesting of the same condition
  */
 function conditional(str, condition, bool, braces = [ '{', '}' ]) {
   const startTag = `${braces[0]}${condition}${braces[1]}`;

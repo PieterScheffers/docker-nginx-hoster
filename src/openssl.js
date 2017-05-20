@@ -3,6 +3,7 @@ const pem = promisify('pem');
 const config = require('./config');
 const fs = promisify('fs');
 const { fileExists } = require('./fs');
+const crypto = require('crypto');
 
 // https://www.npmjs.com/package/pem
 // https://jamielinux.com/docs/openssl-certificate-authority/index.html
@@ -36,6 +37,7 @@ async function dhparamExists() {
 
 /**
  * Create a new key/cert pair and save as file
+ * TODO: create self-signed with a root certificate to create a 'trusted certificate'
  */
 async function createSelfSigned() {
 
@@ -73,9 +75,14 @@ async function createDhparam() {
   return config.ssl.dhparam;
 }
 
+function md5Hash(str) {
+  return crypto.createHash('md5').update(str, 'utf8').digest('hex');
+}
+
 module.exports = exports = {
   getSelfSigned,
   getDhParam,
   selfSignedExists,
   dhparamExists,
+  md5Hash,
 };
