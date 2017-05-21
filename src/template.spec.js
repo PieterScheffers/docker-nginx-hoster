@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { conditional, replace } = require('./template');
+const { conditional, replace, runLoops } = require('./template');
 
 describe('template.js', function() {
   describe('replace', function() {
@@ -96,6 +96,40 @@ describe('template.js', function() {
       `;
 
       expect(conditional(str, 'if_hasVariable', false)).to.eql(expected);
+    });
+  });
+
+  describe('runLoops', function() {
+    it('should replace all loops with some content replicated with variable inserted', function() {
+      const str = `
+        this is some string
+
+        {{loop:jake vince wizzy}}
+        My name is: {i}
+        {{/loop}}
+
+        {{loop:lars bobby kindle}}
+        My name is: {i}
+        {{/loop}}
+
+        some more text
+      `;
+
+      const expected = `
+        this is some string
+
+        My name is: jake
+        My name is: vince
+        My name is: wizzy
+
+        My name is: lars
+        My name is: bobby
+        My name is: kindle
+
+        some more text
+      `;
+
+      expect(runLoops(str)).to.eql(expected);
     });
   });
 });

@@ -6,10 +6,10 @@ const path = require('path');
 const { inspect, getRunning, getHostName, sendSignal } = require('./docker-containers');
 const { logObject, throttle, delay } = require('./utils');
 const dockerEvents = require('./docker-events');
-const { replace, conditional } = require('./template');
+const { replace, conditional, runLoops } = require('./template');
 const config = require('./config');
 const { dhparamExists, selfSignedExists, md5Hash } = require('./openssl');
-const { renewCertificate } = require('./certbot');
+const { renewCertificate } = require('./docker-certbot');
 
 const defaultTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'default-template.conf'), { encoding: 'utf-8' });
 const acmeChallengeTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'certbot-acme-challenge.conf'), { encoding: 'utf-8' });
@@ -36,18 +36,37 @@ async function getDomains(inspections) {
   const doneDomains = [];
 
   // get info from inspect result
-  const domainInfo = inspections.map(i => ({
+  const domainInfo = inspections.map(i => {
     // get the domains
     // sort, to make 'www.example.com,example.com' and 'example.com,www.example.com' the same
-    domains: i.Config.Env.NG_PR_DOMAIN.split(',').map(d => d.trim()).sort(),
-    email: i.Config.Env.NG_PR_EMAIL,
-    template: i.Config.Env.NG_PR_TEMPLATE,
-    host: getHostName(i),
-    port: i.Config.Env.NG_PR_PORT,
-  }))
+    let domains = i.Config.Env.NG_PR_DOMAIN.split(',').map(d => d.trim()).sort();
+
+    // check main domain is in domains, if not select the last domain as main domain
+    let main = i.Config.Env.NG_PR_MAINDOMAIN.trim();
+
+    // if domains doesn't contain the main-domain, add it
+    if( !domains.includes(main) ) {
+      domains.push(main);
+      domains = domains.sort();
+    }
+
+    // if main domain is not set, make it the last domain
+    if( !main ) {
+      main = domains[domains.length - 1];
+    }
+
+    return {
+      domains,
+      main,
+      email: i.Config.Env.NG_PR_EMAIL,
+      template: i.Config.Env.NG_PR_TEMPLATE,
+      host: getHostName(i),
+      port: i.Config.Env.NG_PR_PORT,
+    };
+  })
   // group hosts per domain group
   .reduce((obj, info) => {
-    const { domains, email, template, host, port } = info;
+    const { domains, main, email, template, host, port } = info;
     const domainsStr = domains.join(',');
 
     // add host to domain
@@ -78,6 +97,7 @@ async function getDomains(inspections) {
     // create domain key
     obj[domainsStr] = {
       domains,
+      main,
       email,
       template,
       hosts: [ { host, port } ]
@@ -108,12 +128,19 @@ async function writeConfigs(domainsInfo) {
   const hasSelfSigned = await selfSignedExists();
 
   Object.keys(domainsInfo).forEach(async (key) => {
-    let { hosts, domains, template, email } = domainsInfo[key];
+    let { hosts, domains, main, template, email } = domainsInfo[key];
 
-    const certbot = await Promise.race([
-      renewCertificate(domains, email),
-      delay(100),
-    ]);
+    // const certbot = await Promise.race([
+    //   renewCertificate(domains, email),
+    //   delay(100),
+    // ]);
+
+    let certbot;
+    try {
+      certbot = await renewCertificate(domains, email);
+    } catch(error) {
+      console.error("certbot error", error);
+    }
 
     console.log("certbot", certbot)
 
@@ -145,6 +172,7 @@ async function writeConfigs(domainsInfo) {
 
     /*
      * NG_PR_DOMAINS = spaces separated domain names
+     * NG_PR_MAIN
      * NG_PR_1_PORT
      * NG_PR_1_HOST
      * NG_PR_EMAIL
@@ -166,6 +194,8 @@ async function writeConfigs(domainsInfo) {
       }, {}),
       {
         NG_PR_DOMAINS: domains.join(' '),
+        NG_PR_OTHERDOMAINS: domains.filter(d => d !== main).join(' '),
+        NG_PR_MAIN: main,
         NG_PR_UPSTREAM,
         NG_PR_PROXY_PASS,
         NG_PR_CERTBOT_WEBROOT: config.certbot.webroot,
@@ -177,7 +207,9 @@ async function writeConfigs(domainsInfo) {
       }
     );
 
-    const conf = replace(template, replacements);
+    template = replace(template, replacements);
+
+    const conf = runLoops(template);
     const hash = md5Hash(conf);
     const cDomains = domains.join(',');
     const ed = existingDomains;
@@ -193,6 +225,9 @@ async function writeConfigs(domainsInfo) {
         confHash: hash,
       }
     );
+
+    // TODO: find name or hash of nginx proxy container
+    await sendSignal('nginx_proxy', 'HUP');
 
     // if any conf has changed
     //   send HUP signal to nginx

@@ -1,10 +1,6 @@
 const { exec } = require('child_process');
 const docker = require("./docker-bin");
-const dockerRemoteApi = require('docker-remote-api')
-
-const request = dockerRemoteApi({
-  host: process.env.docker ? process.env.docker : '/var/run/docker.sock'
-});
+const request = require('./docker-remote-api');
 
 // https://docs.docker.com/engine/api/v1.29/#tag/Container
 // http://stackoverflow.com/questions/30775628/docker-how-to-send-a-signal-from-one-running-container-to-another-one

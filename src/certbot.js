@@ -14,7 +14,7 @@
 // console.log(encodeURIComponent('certonly --webroot -w /var/lib/letsencrypt -d www.example.com -d example.com --agree-tos -m "henkie@example.com" --non-interactive'))
 
 const schedule = require('node-schedule');
-
+const path = require('path');
 const config = require('./config');
 const letsencrypt = require('letsencrypt');
 const leStore = require('le-store-certbot');
@@ -31,11 +31,14 @@ function setup() {
   , debug: false
   });
       
+  console.log("WEBROOT", path.join(config.certbot.webroot, '.well-known/acme-challenge'))
   // ACME Challenge Handlers 
   const challenge = leChallenge.create({
-    webrootPath: config.certbot.webroot              // or template string such as 
-  , debug: false                                     // '/srv/www/:hostname/.well-known/acme-challenge' 
+    webrootPath: path.join(config.certbot.webroot, '.well-known/acme-challenge'), // or template string such as 
+    debug: false                                                                  // '/srv/www/:hostname/.well-known/acme-challenge' 
   });
+
+  console.log('challenge', challenge.loopback)
 
   le = letsencrypt.create({
     server: letsencrypt.stagingServerUrl             // or letsencrypt.productionServerUrl 

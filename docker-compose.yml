@@ -1,7 +1,8 @@
 version: '3'
 
 services:
-  nginx:
+  nginx_proxy:
+    container_name: nginx_proxy
     ports:
       - "80:80"
       - "443:443"
@@ -24,8 +25,11 @@ services:
     image: nginx
     environment:
       NG_PR_DOMAIN: ${NG_PR_DOMAIN}
+      NG_PR_MAINDOMAIN: ${NG_PR_MAINDOMAIN}
       NG_PR_PORT: 80
       NG_PR_EMAIL: ${NG_PR_EMAIL}
+    volumes:
+      - ./example_html:/usr/share/nginx/html
 
   # certbot-server:
   #   image: pieterscheffers/certbot-server:latest
