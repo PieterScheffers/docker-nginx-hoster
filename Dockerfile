@@ -7,7 +7,7 @@ COPY ./bin/* /usr/bin/
 RUN mkdir -p /usr/app \
 	&& mkdir -p /etc/nginx/conf.d \
 	&& mkdir -p /etc/nginx/certs \
-	&& mkdir -p /etc/nginx/le-webroot \
+	&& mkdir -p /usr/share/nginx/html \
 	&& chmod +x /usr/bin/docker
 
 # http://blog.zot24.com/tips-tricks-with-alpine-docker/

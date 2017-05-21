@@ -1,6 +1,6 @@
 module.exports = {
   certbot: {
-    webroot: '/etc/nginx/le-webroot',
+    webroot: '/usr/share/nginx/html',
     certificates: '/etc/nginx/certs',
   },
   ssl: {
