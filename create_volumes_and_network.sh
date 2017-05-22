@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# create volumes
+
 if ! docker volume ls -q | grep -l '^certs\-volume$' > /dev/null ; then
 	echo 'Creating certs-volume'
 	docker volume create certs-volume > /dev/null
@@ -19,6 +21,16 @@ if ! docker volume ls -q | grep -l '^conf\-volume$' > /dev/null ; then
 	docker volume create conf-volume > /dev/null
 else
 	echo 'conf-volume already exists'
+fi
+
+
+# create network
+
+if ! docker network ls | grep -l 'main\-network' > /dev/null ; then
+	echo 'Creating main-network'
+	docker network create main-network > /dev/null
+else
+	echo 'main-network already exists'
 fi
 
 exit

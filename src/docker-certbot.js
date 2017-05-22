@@ -1,5 +1,5 @@
 const promisify = require("promisify-node");
-const { exec } = promisify('child_process');
+const { exec } = require('./child_process');
 const path = require('path');
 const fs = promisify('fs');
 const { fileExists } = require('./fs');
@@ -29,7 +29,7 @@ function cleanupCertbotContainer() {
   return exec(`${docker} stop ${containerName}`)
   .then(() => exec(`${docker} rm ${containerName}`))
   .catch(error => {
-    console.warn("Error when cleaning up certbot:", error);
+    // console.warn("Error when cleaning up certbot:", error.message);
   });
 }
 
@@ -85,7 +85,7 @@ function renewCertificate({ domains, email, main = '' }) {
 
     console.log("Certbot executed:", command);
     return exec(command.join(' '))
-    .then((stdout, stderr) => {
+    .then(({ stdout, stderr }) => {
       if( stderr ) throw new Error(stderr);
       return stdout;
     });
@@ -111,6 +111,7 @@ let isBusy = false;
  * Returns the resolved result or null when promise isn't resolved yet
  */
 async function enqueue(data) {
+  console.log("enqueue", data)
   const domainStr = data.domains.join(',');
   const queueObj = domainQueue[domainStr] = Object.assign(domainQueue[domainStr] || {}, data);
   
@@ -127,7 +128,7 @@ async function enqueue(data) {
 
   run();
 
-  return null;
+  return {};
 }
 
 /**
@@ -139,7 +140,9 @@ function run() {
 
   const notDone = Object.keys(domainQueue)
     .map(k => domainQueue[k]) // get values
-    .filter(q => !q.promise || q.isRejected()); // return all not having a promise, or the promise is rejected
+    .filter(q => (!q.promise || q.promise.isRejected()) && !q.timeout); // return all not having a promise, or the promise is rejected
+
+  console.log("notDOne", notDone)
 
   if( notDone.length && !isBusy ) {
     isBusy = true;
@@ -148,7 +151,19 @@ function run() {
 
     data.promise = promState(renewCertificate(data));
 
-    data.promise.catch(() => {}).then(() => { isBusy = false; run(); });
+    data.promise.catch(() => {}).then(() => {
+      isBusy = false;
+      run();
+
+      // set a timeout, so the same certificate isn't asked constantly
+      if( !data.promise.isResolved() ) {
+        data.timeout = setTimeout(() => {
+          data.timeout = null;
+        }, 60000);
+      }
+    });
+
+    console.log("data", data);
   }
 }
 
