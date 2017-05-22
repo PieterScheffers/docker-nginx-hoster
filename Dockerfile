@@ -15,7 +15,7 @@ RUN apk --no-cache add openssl
 
 WORKDIR /usr/app
 
-ENTRYPOINT node /usr/app/index.js
+ENTRYPOINT node --trace-warnings /usr/app/index.js
 
 COPY ./package.json /usr/app
 

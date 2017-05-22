@@ -1,15 +1,16 @@
 // /etc/nginx/conf.d
 // /etc/nginx/certs
 
-const fs = require('fs');
+const promisify = require("promisify-node");
+const fs = promisify('fs');
 const path = require('path');
-const { inspect, getRunning, getHostName, sendSignal } = require('./docker-containers');
-const { logObject, throttle, delay } = require('./utils');
+const { inspect, getRunning, getHostName, sendHupSignal } = require('./docker-containers');
+const { logObject, throttle } = require('./utils');
 const dockerEvents = require('./docker-events');
 const { replace, conditional, runLoops } = require('./template');
 const config = require('./config');
 const { dhparamExists, selfSignedExists, md5Hash } = require('./openssl');
-const { renewCertificate } = require('./docker-certbot');
+const { enqueue } = require('./docker-certbot');
 
 const defaultTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'default-template.conf'), { encoding: 'utf-8' });
 const acmeChallengeTemplate = fs.readFileSync(path.join(__dirname, 'conf', 'snippets', 'certbot-acme-challenge.conf'), { encoding: 'utf-8' });
@@ -122,6 +123,7 @@ function writeConditionals(template, conditionals) {
   return template;
 }
 
+// TODO: Cleanup this method!!
 async function writeConfigs(domainsInfo) {
 
   const hasDhparam = await dhparamExists();
@@ -130,19 +132,15 @@ async function writeConfigs(domainsInfo) {
   Object.keys(domainsInfo).forEach(async (key) => {
     let { hosts, domains, main, template, email } = domainsInfo[key];
 
-    // const certbot = await Promise.race([
-    //   renewCertificate(domains, email),
-    //   delay(100),
-    // ]);
+    const cDomains = domains.join(',');
+    const ed = existingDomains;
 
     let certbot;
     try {
-      certbot = await renewCertificate(domains, email);
+      certbot = await enqueue({ domains, email, main });
     } catch(error) {
       console.error("certbot error", error);
     }
-
-    console.log("certbot", certbot)
 
     if( !template ) {
       template = defaultTemplate;
@@ -151,10 +149,10 @@ async function writeConfigs(domainsInfo) {
     // apply conditionals
     // with it pieces of configuration can be inserted on a condition
     const conditionals = {
-      SSL: hasSelfSigned || false,
+      SSL: hasSelfSigned || (certbot['fullchain.pem'] && certbot['privkey.pem']),
       Dhparam: hasDhparam,
-      TrustedCertificate: false,
-      Letsencrypt: false,
+      TrustedCertificate: !!certbot['fullchain.pem'],
+      Letsencrypt: certbot['fullchain.pem'] && certbot['privkey.pem'],
       SelfSigned: hasSelfSigned,
     };
 
@@ -201,9 +199,9 @@ async function writeConfigs(domainsInfo) {
         NG_PR_CERTBOT_WEBROOT: config.certbot.webroot,
         NG_PR_EMAIL: email,
         NG_PR_DHPARAM: hasDhparam ? config.ssl.dhparam : '',
-        NG_PR_TRUSTED_CERTIFICATE: '',
-        NG_PR_SSL_CERTIFICATE: hasSelfSigned ? config.ssl.cert : '',
-        NG_PR_SSL_CERTIFICATE_KEY: hasSelfSigned ? config.ssl.key : '',
+        NG_PR_TRUSTED_CERTIFICATE: certbot['fullchain.pem'] ? certbot['fullchain.pem'] : '',
+        NG_PR_SSL_CERTIFICATE: certbot['fullchain.pem'] ? certbot['fullchain.pem'] : (hasSelfSigned ? config.ssl.cert : ''),
+        NG_PR_SSL_CERTIFICATE_KEY: certbot['privkey.pem'] ? certbot['privkey.pem'] : (hasSelfSigned ? config.ssl.key : ''),
       }
     );
 
@@ -211,12 +209,15 @@ async function writeConfigs(domainsInfo) {
 
     const conf = runLoops(template);
     const hash = md5Hash(conf);
-    const cDomains = domains.join(',');
-    const ed = existingDomains;
 
     if( !ed[cDomains] || ed[cDomains].confHash !== hash ) {
       const file = path.join(config.nginx['conf.d'], `${domains.join('_')}.conf`);
       await fs.writeFile(file, conf);
+
+      // TODO: find name or hash of nginx proxy container
+      // TODO: first check if any config has changed before reload nginx
+      const res = await sendHupSignal('nginx_proxy');
+      console.log('Send HUP to nginx_proxy to reload config', res);
     }
     
     ed[cDomains] = Object.assign(
@@ -225,12 +226,6 @@ async function writeConfigs(domainsInfo) {
         confHash: hash,
       }
     );
-
-    // TODO: find name or hash of nginx proxy container
-    await sendSignal('nginx_proxy', 'HUP');
-
-    // if any conf has changed
-    //   send HUP signal to nginx
 
   });
 

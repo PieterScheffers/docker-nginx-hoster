@@ -23,6 +23,8 @@ const { getSelfSigned, getDhParam } = require('./openssl');
  * NG_PR_SSL_CERTIFICATE_KEY
  */
 
+process.on('unhandledRejection', (reason, promise) => console.error('unhandled Promise Rejection:', 'reason', reason, 'promise', promise));
+
 async function main() {
 
   let listener;

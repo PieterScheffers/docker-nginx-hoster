@@ -51,11 +51,22 @@ function inspect(containers) {
 function sendSignal(container, signal = 'HUP') {
   return new Promise((resolve, reject) => {
     request.post(`/containers/${container}/kill?signal=${signal}`, { json: true }, (err, json) => {
+      console.log("err", err, 'json', json);
       if(err) return reject(err);
       resolve(json);
     })
 
   })
+}
+
+function sendHupSignal(container) {
+  return new Promise((resolve, reject) => {
+    exec(`${docker} kill -s HUP ${container}`, (error, stdout, stderr) => {
+      if( error ) return reject(error);
+      if( stderr ) return reject(stderr);
+      resolve(stdout);
+    });
+  });
 }
 
 function argsTranspile(args) {
@@ -83,4 +94,5 @@ module.exports = exports = {
   toSmallHash,
   getHostName,
   sendSignal,
+  sendHupSignal,
 };

@@ -1,5 +1,13 @@
 version: '3'
 
+volumes:
+  certs-volume:
+    external: true
+  conf-volume:
+    external: true
+  webroot-volume:
+    external: true
+
 services:
   nginx_proxy:
     container_name: nginx_proxy
@@ -36,8 +44,3 @@ services:
   #   volumes:
   #     - ./data/certbot/var_lib_letsencrypt:/var/lib/letsencrypt
   #     - ./data/certbot/etc_letsencrypt:/etc/letsencrypt
-
-volumes:
-  certs-volume:
-  conf-volume:
-  webroot-volume:
