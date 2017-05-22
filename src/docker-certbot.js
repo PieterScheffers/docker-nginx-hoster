@@ -142,8 +142,6 @@ function run() {
     .map(k => domainQueue[k]) // get values
     .filter(q => (!q.promise || q.promise.isRejected()) && !q.timeout); // return all not having a promise, or the promise is rejected
 
-  console.log("notDOne", notDone)
-
   if( notDone.length && !isBusy ) {
     isBusy = true;
 
@@ -162,8 +160,6 @@ function run() {
         }, 60000);
       }
     });
-
-    console.log("data", data);
   }
 }
 

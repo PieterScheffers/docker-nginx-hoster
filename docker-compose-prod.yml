@@ -24,6 +24,7 @@ services:
       - conf-volume:/etc/nginx/conf.d:ro
       - webroot-volume:/usr/share/nginx/html:ro
     networks:
+      - default
       - main-network
 
   hoster:
