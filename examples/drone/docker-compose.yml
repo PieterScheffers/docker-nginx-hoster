@@ -1,0 +1,114 @@
+version: '3'
+
+networks:
+  main-network:
+    external: true
+
+services:
+  drone-server:
+    image: drone/drone:0.6
+    volumes:
+      - /docker/data/drone:/var/lib/drone/
+    restart: always
+    environment:
+      - DRONE_OPEN=${DRONE_OPEN}
+      - DRONE_ADMIN=${DRONE_ADMIN}
+      - DRONE_HOST=${DRONE_HOST}
+      - DRONE_GITHUB=${DRONE_GITHUB}
+      - DRONE_GITHUB_CLIENT=${DRONE_GITHUB_CLIENT}
+      - DRONE_GITHUB_SECRET=${DRONE_GITHUB_SECRET}
+      - DRONE_BITBUCKET=${DRONE_BITBUCKET}
+      - DRONE_BITBUCKET_CLIENT=${DRONE_BITBUCKET_CLIENT}
+      - DRONE_BITBUCKET_SECRET=${DRONE_BITBUCKET_SECRET}
+      - DRONE_SECRET=${DRONE_SECRET}
+      - NG_PR_DOMAIN=${NG_PR_DOMAIN}
+      - NG_PR_MAINDOMAIN=${NG_PR_MAINDOMAIN}
+      - NG_PR_EMAIL=${NG_PR_EMAIL}
+      - NG_PR_PORT=${NG_PR_PORT}
+      - |
+        NG_PR_TEMPLATE=
+          # Handle connection upgrading.
+          map $$http_upgrade $$connection_upgrade {
+              default upgrade;
+              ''      close;
+          }
+
+          # Establish the upstream to Drone.
+          {NG_PR_UPSTREAM}
+
+          server {
+              listen      80;
+              server_name {NG_PR_DOMAINS};
+
+              {NG_PR_ACME_CHALLENGE}
+
+          {if_hasSSL}
+              location / {
+                  return 301 https://{NG_PR_MAIN}$$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl;
+              server_name {NG_PR_DOMAINS};
+          {/if_hasSSL}
+
+              # Proxy all requests to the Drone application.
+              location / {
+                  access_log off;
+                  proxy_set_header X-Real-IP $$remote_addr;
+                  proxy_set_header X-Forwarded-For $$remote_addr;
+                  proxy_set_header X-Forwarded-Proto $$scheme;
+                  proxy_set_header Host $$http_host;
+
+                  proxy_pass http://{NG_PR_PROXY_PASS};
+                  proxy_redirect off;
+                  proxy_http_version 1.1;
+                  proxy_buffering off;
+
+                  chunked_transfer_encoding off;
+              }
+
+              # Handle WebSockets by catching all /ws (case-insensitive) and upgrade the connection.
+              location ~* /ws {
+                  access_log off;
+                  proxy_pass http://{NG_PR_PROXY_PASS};
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $$http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_read_timeout 86400;
+                  proxy_set_header X-Real-IP $$remote_addr;
+                  proxy_set_header X-Forwarded-For $$remote_addr;
+                  proxy_set_header X-Forwarded-Proto $$scheme;
+              }
+
+          {if_hasSSL}
+              # SSL Configuration
+              ssl on;
+              ssl_certificate {NG_PR_SSL_CERTIFICATE};
+              ssl_certificate_key {NG_PR_SSL_CERTIFICATE_KEY};
+
+          {if_hasTrustedCertificate}
+              ssl_trusted_certificate {NG_PR_TRUSTED_CERTIFICATE};
+          {/if_hasTrustedCertificate}
+
+          {if_hasDhparam}
+              ssl_dhparam {NG_PR_DHPARAM};
+          {/if_hasDhparam}
+
+          {/if_hasSSL}
+          }
+    networks:
+      - default
+      - main-network
+
+  drone-agent:
+    image: drone/drone:0.6
+    command: agent
+    restart: always
+    depends_on: [ drone-server ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DRONE_SERVER=ws://drone-server:8000/ws/broker
+      - DRONE_SECRET=${DRONE_SECRET}
