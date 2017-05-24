@@ -260,8 +260,6 @@ async function refreshConfigs() {
   const domains = await getDomains(inspections);
 
   await writeConfigs(domains);
-
-  // reload nginx
 }
 
 // create a throttled hander,

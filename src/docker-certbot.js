@@ -9,18 +9,18 @@ const config = require('./config');
 const { promState } = require('./utils');
 const containerName = 'hoster_certbot';
 
-// docker run 
-// --rm 
-// -p "80:80" 
-// -p "443:443" 
-// -v "/docker/etc/letsencrypt:/etc/letsencrypt" 
-// certbot/certbot 
-// certonly 
-// --standalone 
-// -n 
-// -d $site 
-// -d example.com 
-// --email info@example.com 
+// docker run
+// --rm
+// -p "80:80"
+// -p "443:443"
+// -v "/docker/etc/letsencrypt:/etc/letsencrypt"
+// certbot/certbot
+// certonly
+// --standalone
+// -n
+// -d $site
+// -d example.com
+// --email info@example.com
 // --agree-tos;
 
 // certbot certonly --webroot -w /var/www/example/ -d www.example.com -d example.com -w /var/www/other -d other.example.net -d another.other.example.net
@@ -74,7 +74,7 @@ function renewCertificate({ domains, email, main = '' }) {
       `-w ${config.certbot.webroot}`,
     ];
 
-    // let main domain be the first, 
+    // let main domain be the first,
     // so the name of the certificate is of the main domain
     if( main && domains.includes(main) ) {
       command.push(`-d ${main}`);
@@ -114,7 +114,7 @@ async function enqueue(data) {
   console.log("enqueue", data);
   const domainStr = data.domains.join(',');
   const queueObj = domainQueue[domainStr] = Object.assign(domainQueue[domainStr] || {}, data);
-  
+
   // return the contents of the certificate dir if it exists
   const exists = await fileExists(certDir(data.main));
 

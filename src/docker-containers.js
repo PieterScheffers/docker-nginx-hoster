@@ -54,9 +54,8 @@ function sendSignal(container, signal = 'HUP') {
       console.log("err", err, 'json', json);
       if(err) return reject(err);
       resolve(json);
-    })
-
-  })
+    });
+  });
 }
 
 function sendHupSignal(container) {
