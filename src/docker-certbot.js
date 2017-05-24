@@ -111,7 +111,7 @@ let isBusy = false;
  * Returns the resolved result or null when promise isn't resolved yet
  */
 async function enqueue(data) {
-  console.log("enqueue", data)
+  console.log("enqueue", data);
   const domainStr = data.domains.join(',');
   const queueObj = domainQueue[domainStr] = Object.assign(domainQueue[domainStr] || {}, data);
   
@@ -119,6 +119,7 @@ async function enqueue(data) {
   const exists = await fileExists(certDir(data.main));
 
   if( exists ) {
+    console.log("Returning already existing certbot for", data.main);
     return await readDir(data.main);
   }
 
@@ -141,6 +142,8 @@ function run() {
   const notDone = Object.keys(domainQueue)
     .map(k => domainQueue[k]) // get values
     .filter(q => (!q.promise || q.promise.isRejected()) && !q.timeout); // return all not having a promise, or the promise is rejected
+
+  console.log("notDone", notDone);
 
   if( notDone.length && !isBusy ) {
     isBusy = true;

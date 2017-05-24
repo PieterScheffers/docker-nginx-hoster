@@ -1,8 +1,6 @@
 const promisify = require("promisify-node");
 const fs = promisify('fs');
 
-exports.writeFile = fs.writeFile;
-
 async function fileExists(file, minSize = 10) {
   try {
 
@@ -27,4 +25,19 @@ async function fileExists(file, minSize = 10) {
   }
 }
 
-exports.fileExists = fileExists;
+async function unlink(file) {
+  try {
+    return await fs.unlink(file);
+  } catch(error) {
+    // if file doesn't exist, it is OK
+    if( error.code !== 'ENOENT' ) {
+      throw error;
+    }
+  }
+}
+
+module.exports = exports = {
+  writeFile: fs.writeFile,
+  fileExists,
+  unlink,
+};

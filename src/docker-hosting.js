@@ -3,6 +3,7 @@
 
 const promisify = require("promisify-node");
 const fs = promisify('fs');
+const { unlink } = require('./fs');
 const path = require('path');
 const { inspect, getRunning, getHostName, sendHupSignal } = require('./docker-containers');
 const { logObject, throttle } = require('./utils');
@@ -25,9 +26,17 @@ const existingDomains = {
   //   hosts: [
   //     { host: 'my-proxied-app_1', port: 3333 },
   //     { host: 'my-proxied-app_2', port: 3333 },
-  //   ]
+  //   ],
+  //   enabled: false,
+  //   updated: false,
   // }
 };
+
+function setAllDomainsOff() {
+  Object.keys(existingDomains).forEach(k => {
+    Object.assign(existingDomains[k], { enabled: false, updated: false });
+  });
+}
 
 async function getDomains(inspections) {
 
@@ -111,7 +120,6 @@ async function getDomains(inspections) {
 
   return domainInfo;
 }
-exports.getDomains = getDomains;
 
 function writeConditionals(template, conditionals) {
   Object.keys(conditionals).forEach(cond => {
@@ -128,12 +136,14 @@ async function writeConfigs(domainsInfo) {
 
   const hasDhparam = await dhparamExists();
   const hasSelfSigned = await selfSignedExists();
+  const ed = existingDomains;
 
-  Object.keys(domainsInfo).forEach(async (key) => {
+  setAllDomainsOff();
+
+  for( let key in domainsInfo ) {
     let { hosts, domains, main, template, email } = domainsInfo[key];
 
     const cDomains = domains.join(',');
-    const ed = existingDomains;
 
     let certbot;
     try {
@@ -200,8 +210,8 @@ async function writeConfigs(domainsInfo) {
         NG_PR_EMAIL: email,
         NG_PR_DHPARAM: hasDhparam ? config.ssl.dhparam : '',
         NG_PR_TRUSTED_CERTIFICATE: certbot['fullchain.pem'] ? certbot['fullchain.pem'] : '',
-        NG_PR_SSL_CERTIFICATE: certbot['fullchain.pem'] ? certbot['fullchain.pem'] : (hasSelfSigned ? config.ssl.cert : ''),
-        NG_PR_SSL_CERTIFICATE_KEY: certbot['privkey.pem'] ? certbot['privkey.pem'] : (hasSelfSigned ? config.ssl.key : ''),
+        NG_PR_SSL_CERTIFICATE: certbot['fullchain.pem'] || (hasSelfSigned ? config.ssl.cert : ''),
+        NG_PR_SSL_CERTIFICATE_KEY: certbot['privkey.pem'] || (hasSelfSigned ? config.ssl.key : ''),
       }
     );
 
@@ -209,43 +219,38 @@ async function writeConfigs(domainsInfo) {
 
     const conf = runLoops(template);
     const hash = md5Hash(conf);
+    const file = path.join(config.nginx['conf.d'], `${domains.join('_')}.conf`);
+
+    ed[cDomains] = ed[cDomains] || {
+      file,
+      updated: false
+    };
 
     if( !ed[cDomains] || ed[cDomains].confHash !== hash ) {
-      const file = path.join(config.nginx['conf.d'], `${domains.join('_')}.conf`);
       await fs.writeFile(file, conf);
-
-      // TODO: find name or hash of nginx proxy container
-      // TODO: first check if any config has changed before reload nginx
-      const res = await sendHupSignal('nginx_proxy');
-      console.log('Send HUP to nginx_proxy to reload config', res);
+      ed[cDomains].updated = true;
     }
-    
-    ed[cDomains] = Object.assign(
-      ed[cDomains] || {}, 
-      {
-        confHash: hash,
-      }
-    );
 
-  });
+    Object.assign(ed[cDomains], {
+      confHash: hash,
+      enabled: true
+    });
+  }
 
-  // TODO: write configs!
-  // each domain
-  //   write config
-  //     include of .well-known (https://community.letsencrypt.org/t/how-to-nginx-configuration-to-enable-acme-challenge-support-on-all-http-virtual-hosts/5622/8)
-  //     http to https redirect
-  //     use self-signed certificate when letsencrypt certificate isn't available yet
-  //     
-  //   get ssl certificate locations
-  //    (get ssl certificate) https://certbot.eff.org/docs/using.html?highlight=nginx#webroot
-  //    (schedule ssl certificate renewal)
-  //  
-  //  nginx config: /etc/nginx/conf.d/example.com.conf
-  //  certificates: /etc/nginx/certs/example.com.d/
-  //  certificate-symlinks: /etc/nginx/certs/example.com.crt
-  //                        /etc/nginx/certs/example.com.key
-  //   
-  //   
+  // check any domain has updated
+  const hasAnyUpdated = Object.keys(ed).reduce((bool, k) => bool || ed[k].updated, false);
+
+  // remove unwanted configs
+  const configsToPreserve = Object.keys(ed).map(k => ed[k]).filter(d => d.enabled).map(d => d.file);
+  logObject(configsToPreserve, 'configsToPreserve');
+  await cleanConfigDir(configsToPreserve);
+
+  // reload nginx if necessary
+  if( hasAnyUpdated ) {
+    // TODO: find name or hash of nginx proxy container
+    const res = await sendHupSignal('nginx_proxy');
+    console.log('Send HUP to nginx_proxy to reload config', res);
+  }
 }
 
 async function refreshConfigs() {
@@ -263,7 +268,6 @@ async function refreshConfigs() {
 // to refresh configs every 30 seconds max
 const handler = throttle(refreshConfigs, 30000);
 
-exports.refreshConfigs = handler;
 
 function createListener(event = 'all') {
   let de;
@@ -290,4 +294,49 @@ function createListener(event = 'all') {
   };
 }
 
-exports.createListener = createListener;
+/**
+ * Remove all files from the config directory
+ */
+async function cleanConfigDir(ignorePaths = []) {
+  const files = await fs.readdir(config.nginx['conf.d']);
+  const paths = files
+    .map(f => path.join(config.nginx['conf.d'], f))
+    .filter(p => !ignorePaths.includes(p));
+
+  return await Promise.all( paths.map(p => unlink(p)) );
+}
+
+/**
+ * Write the default config
+ */
+async function writeDefaultConfig() {
+  const defaultContents = `
+    server {
+        listen       80;
+        server_name  localhost;
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+        }
+
+        # redirect server error pages to the static page /50x.html
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
+    }
+  `;
+
+  const file = path.join(config.nginx['conf.d'], 'default.conf');
+
+  return await fs.writeFile(file, defaultContents);
+}
+
+module.exports = exports = {
+  getDomains,
+  refreshConfigs: handler,
+  createListener,
+  cleanConfigDir,
+  writeDefaultConfig,
+};

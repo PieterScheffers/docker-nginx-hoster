@@ -1,7 +1,7 @@
 const { inspect, get, argsTranspile, toSmallHash } = require('./docker-containers');
 const { replace } = require('./template');
 const { writeFile } = require('./fs');
-const { createListener, refreshConfigs } = require('./docker-hosting');
+const { createListener, refreshConfigs, cleanConfigDir, writeDefaultConfig } = require('./docker-hosting');
 const { getSelfSigned, getDhParam } = require('./openssl');
 /**
  * environment variables
@@ -31,9 +31,16 @@ async function main() {
 
   try {
 
+    // At start: remove all configs
+    // Create a simple config to redirect to nginx default html
+    await cleanConfigDir();
+    await writeDefaultConfig();
+
+    // start listening for docker events (those trigger refreshConfig)
     listener = createListener();
     listener.start();
 
+    // refresh the nginx configs
     await refreshConfigs();
 
     console.log('self-signed', await getSelfSigned());
