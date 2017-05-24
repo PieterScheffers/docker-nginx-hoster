@@ -14,6 +14,7 @@ networks:
 
 services:
   nginx_proxy:
+    restart: always
     container_name: nginx_proxy
     ports:
       - "80:80"
@@ -28,6 +29,7 @@ services:
       - main-network
 
   hoster:
+    restart: always
     image: pieterscheffers/nginx-hoster
     container_name: hoster
     volumes:

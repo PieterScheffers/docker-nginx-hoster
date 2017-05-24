@@ -53,7 +53,7 @@ async function readDir(main) {
   } catch(e) {
     return {};
   }
-} 
+}
 
 function renewCertificate({ domains, email, main = '' }) {
   return cleanupCertbotContainer()
