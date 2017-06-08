@@ -65,12 +65,16 @@ async function getDomains(inspections) {
       main = domains[domains.length - 1];
     }
 
+    // TODO: Find networks of nginx proxy
+    // Get the first ip that belongs to one of those networks
+    const hostIp = i.NetworkSettings.Networks['main-network'].IPAddress;
+
     return {
       domains,
       main,
       email: i.Config.Env.NG_PR_EMAIL,
       template: i.Config.Env.NG_PR_TEMPLATE,
-      host: getHostName(i),
+      host: hostIp, // getHostName(i),
       port: i.Config.Env.NG_PR_PORT,
     };
   })
