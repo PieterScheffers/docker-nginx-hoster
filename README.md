@@ -14,3 +14,7 @@ The self-signed certificate and the dhparam are generated directly when the prox
 2. Self-signed certificates are generated, but dhparam not yet. --> http
 3. self-signed certificates and dhparam are generated. --> https, self-signed
 4. letsencrypt and dhparam are generated. --> https, letsencrypt
+
+
+### Renew
+docker run --rm -v "certs-volume:/etc/letsencrypt" -v "webroot-volume:/usr/share/nginx/html" certbot/certbot renew
